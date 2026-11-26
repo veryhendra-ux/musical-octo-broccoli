@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>StatisKopi AR/VR + GenAI — Media Pembelajaran Interaktif Mean & Outlier</title>
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <style>
+    :root {
+      --navy: #1b365d;
+      --coffee: #7c4d25;
+      --coffee-light: #a67c52;
+      --gold: #d97706;
+      --green: #15803d;
+      --red: #b91c1c;
+      --bg-card: rgba(255, 255, 255, 0.95);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0; overflow: hidden;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #e8eef5;
+    }
+
+    /* Live AR Camera Feed behind transparent A-Frame canvas */
+    #ar-video {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      object-fit: cover; z-index: 0; display: none;
+    }
+    a-scene {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1;
+    }
+
+    /* Top Header Bar (Timer, Progress, AR/VR Mode) */
+    #top-bar {
+      position: fixed; top: 10px; left: 10px; right: 10px; z-index: 20;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: 8px; pointer-events: none;
+    }
+    .pill {
+      pointer-events: auto;
+      background: var(--bg-card); color: var(--navy);
+      padding: 8px 14px; border-radius: 999px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+      font-size: 12.5px; font-weight: 600;
+      display: flex; align-items: center; gap: 10px;
+      border: 1px solid rgba(27,54,93,0.12);
+    }
+    .badge {
+      background: var(--navy); color: #fff;
+      padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    }
+    .badge.coffee { background: var(--coffee); }
+    .badge.green { background: var(--green); }
+
+    /* Mode Switcher */
+    .mode-group { display: flex; gap: 6px; pointer-events: auto; }
+    .btn {
+      border: none; border-radius: 8px; padding: 8px 12px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      color: #fff; background: var(--navy);
+      transition: transform 0.12s, opacity 0.2s, background 0.2s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .btn:hover { opacity: 0.92; transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn.coffee { background: var(--coffee); }
+    .btn.green { background: var(--green); }
+    .btn.red { background: var(--red); }
+    .btn.gold { background: var(--gold); }
+    .btn.outline {
+      background: #fff; color: var(--navy);
+      border: 1.5px solid var(--navy);
+    }
+    .btn.active-mode { outline: 3px solid #facc15; }
+
+    /* Main Control Panel (Left / Collapsible) */
+    #panel {
+      position: fixed; top: 64px; left: 10px; z-index: 20;
+      width: 350px; max-width: calc(100vw - 20px);
+      max-height: calc(100vh - 80px); overflow-y: auto;
+      background: var(--bg-card); color: #1f2937;
+      border-radius: 14px; padding: 14px 16px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.16);
+      border-left: 5px solid var(--coffee);
+      transition: transform 0.25s ease;
+    }
+    #panel.collapsed { transform: translateX(-110%); }
+    #toggle-panel-btn {
+      position: fixed; bottom: 16px; left: 12px; z-index: 25;
+      background: var(--navy); color: #fff; border: none;
+      padding: 10px 14px; border-radius: 999px; font-size: 12.5px;
+      font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+    }
+
+    /* Stage Tabs */
+    .stage-tabs {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;
+      margin-bottom: 12px;
+    }
+    .stage-tab {
+      padding: 6px 4px; font-size: 11px; font-weight: 700;
+      border: 1px solid #cbd5e1; border-radius: 8px;
+      background: #f8fafc; color: var(--navy); cursor: pointer; text-align: center;
+    }
+    .stage-tab.active {
+      background: var(--navy); color: #fff; border-color: var(--navy);
+    }
+    .stage-tab.done {
+      border-color: var(--green); color: var(--green); background: #f0fdf4;
+    }
+    .stage-tab.active.done { background: var(--green); color: #fff; }
+
+    .section-title {
+      font-size: 14.5px; font-weight: 700; color: var(--navy);
+      margin: 0 0 6px 0; display: flex; align-items: center; justify-content: space-between;
+    }
+    .desc { font-size: 12.5px; line-height: 1.48; color: #374151; margin: 0 0 10px 0; }
+
+    .card-box {
+      background: #f8fafc; border: 1px solid #e2e8f0;
+      border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+    }
+    .card-box.coffee-bg { background: #fdf8f3; border-color: #e7d5c0; }
+    .card-box.ai-bg { background: #eff6ff; border-color: #bfdbfe; }
+
+    .slider-wrap { margin: 8px 0; }
+    .slider-wrap label {
+      display: flex; justify-content: space-between;
+      font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 4px;
+    }
+    input[type="range"] {
+      width: 100%; accent-color: var(--coffee); cursor: pointer; height: 6px;
+    }
+
+    .metrics-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+      margin: 8px 0;
+    }
+    .metric {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      padding: 6px; text-align: center;
+    }
+    .metric .m-lbl { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+    .metric .m-val { font-size: 14px; font-weight: 800; color: var(--navy); margin-top: 2px; }
+
+    .feedback {
+      font-size: 12px; padding: 9px 11px; border-radius: 8px;
+      margin-top: 8px; line-height: 1.45; font-weight: 500;
+    }
+    .feedback.info { background: #e0f2fe; color: #075985; border-left: 4px solid #0284c7; }
+    .feedback.success { background: #dcfce7; color: #166534; border-left: 4px solid #16a34a; }
+    .feedback.warn { background: #fef3c7; color: #92400e; border-left: 4px solid #d97706; }
+    .feedback.danger { background: #fee2e2; color: #991b1b; border-left: 4px solid #dc2626; }
+
+    .btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .quiz-opt {
+      display: block; width: 100%; text-align: left;
+      background: #fff; color: #1f2937; border: 1.5px solid #cbd5e1;
+      border-radius: 8px; padding: 8px 10px; margin-bottom: 6px;
+      font-size: 12px; cursor: pointer; font-weight: 500;
+    }
+    .quiz-opt:hover { border-color: var(--navy); background: #f1f5f9; }
+    .quiz-opt.correct { background: #dcfce7; border-color: var(--green); color: #14532d; font-weight: 700; }
+    .quiz-opt.wrong { background: #fee2e2; border-color: var(--red); color: #7f1d1d; }
+
+    select, input[type="text"], input[type="password"] {
+      width: 100%; padding: 7px 9px; border-radius: 7px;
+      border: 1px solid #cbd5e1; font-size: 12px; margin-top: 4px;
+    }
+    .mini-note { font-size: 11px; color: #64748b; margin-top: 6px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<!-- Live Video Background for Web AR Mode -->
+<video id="ar-video" autoplay playsinline muted></video>
+
+<!-- Top Bar -->
+<div id="top-bar">
+  <div class="pill">
+    <span>☕ <b>StatisKopi AR/VR + GenAI</b></span>
+    <span class="badge coffee" id="timer-badge">⏱ 00:00 / 15–20 mnt</span>
+    <span class="badge green" id="score-badge">Skor: 0/100</span>
+  </div>
+  <div class="mode-group">
+    <button class="btn active-mode" id="btn-mode-vr" onclick="setMode('vr')">🏛️ Mode VR Galeri 3D</button>
+    <button class="btn coffee" id="btn-mode-ar" onclick="setMode('ar')">📷 Mode AR Kamera</button>
+  </div>
+</div>
+
+<!-- Toggle Panel Button (useful on mobile) -->
+<button id="toggle-panel-btn" onclick="togglePanel()">☰ Panel Belajar</button>
+
+<!-- Main Interactive Learning Panel -->
+<div id="panel">
+  <div class="stage-tabs">
+    <button class="stage-tab active" id="tab-1" onclick="goStage(1)">1. Budaya<br><small>3 mnt</small></button>
+    <button class="stage-tab" id="tab-2" onclick="goStage(2)">2. Mean<br><small>5 mnt</small></button>
+    <button class="stage-tab" id="tab-3" onclick="goStage(3)">3. GenAI<br><small>7 mnt</small></button>
+    <button class="stage-tab" id="tab-4" onclick="goStage(4)">4. Uji<br><small>5 mnt</small></button>
+  </div>
+
+  <!-- ================= TAHAP 1: ORIENTASI BUDAYA ================= -->
+  <div id="stage-1">
+    <div class="section-title">
+      <span>Tahap 1: Konteks Panen Kopi Nusantara</span>
+      <span class="badge">~3 Menit</span>
+    </div>
+    <p class="desc">
+      Selamat datang di <b>Galeri Virtual StatisKopi</b>. Media ini menggabungkan <b>WebVR 3D</b>, <b>WebAR Kamera</b>, dan <b>GenAI Visual Generator</b> untuk memahami konsep <i>Mean</i> sebagai titik keseimbangan dan sensitivitasnya terhadap <i>outlier</i>.
+    </p>
+    <div class="card-box coffee-bg">
+      <b>🌱 Studi Kasus Kearifan Lokal (Kopi Robusta Lampung):</b>
+      <p class="desc" style="margin-top:4px; margin-bottom:0;">
+        Lima petani di Koperasi Tani Kopi memanen hasil petikan harian sebesar <b>2 kg, 3 kg, 4 kg, 5 kg, dan 6 kg</b>. Sebelum menghitung dengan rumus, jelajahi ruang galeri 3D (geser layar / tombol <b>WASD</b>) atau aktifkan <b>Mode AR Kamera</b> di pojok kanan atas untuk meletakkan timbangan 3D di meja Anda!
+      </p>
+    </div>
+    <div class="card-box">
+      <b>🧭 Target Sesi (15–20 Menit):</b>
+      <ul style="margin:4px 0 0 16px; padding:0; font-size:12px; line-height:1.5;">
+        <li><b>Titik Interaksi 1:</b> Manipulasi titik tumpu 3D untuk menyeimbangkan timbangan <i>Mean</i>.</li>
+        <li><b>Titik Interaksi 2:</b> Eksperimen penambahan karung <i>Outlier</i> 20 kg pada objek 3D.</li>
+        <li><b>Titik Interaksi 3:</b> Latihan visual 3D otomatis dari <b>GenAI Scenario Engine</b>.</li>
+        <li><b>Titik Interaksi 4:</b> Pengambilan keputusan kritis (<i>Mean</i> vs <i>Median</i>).</li>
+      </ul>
+    </div>
+    <div class="btn-row">
+      <button class="btn green" style="width:100%;" onclick="completeStage(1, 15); goStage(2);">Mulai Eksplorasi Titik Interaksi 1 →</button>
+    </div>
+    <p class="mini-note">Disusun oleh: Very Hendra Saputra, M.Pd — Pendidikan Matematika, Universitas Teknokrat Indonesia.</p>
+  </div>
+
+  <!-- ================= TAHAP 2: MANIPULASI TITIK TUMPU & OUTLIER ================= -->
+  <div id="stage-2" class="hidden">
+    <div class="section-title">
+      <span>Tahap 2: Manipulasi 3D Mean & Outlier</span>
+      <span class="badge coffee">~5 Menit</span>
+    </div>
+    <p class="desc">
+      <b>Titik Interaksi 1 (Manipulasi Objek):</b> Geser titik tumpu segitiga (<i>fulcrum</i>) di bawah papan kayu 3D hingga papan menjadi <b>seimbang (0°)</b> untuk menemukan nilai <i>Mean</i>!
+    </p>
+
+    <div class="card-box coffee-bg">
+      <div class="slider-wrap">
+        <label>
+          <span>Posisi Tumpuan Segitiga (Skala 1 – 10):</span>
+          <span id="pivot-val-text" style="color:#b91c1c;">2.00</span>
+        </label>
+        <input type="range" id="pivot-slider" min="1" max="10" step="0.05" value="2.0" oninput="onPivotChange(this.value)">
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric">
+          <div class="m-lbl">Kemiringan</div>
+          <div class="m-val" id="tilt-val">Miring</div>
+        </div>
+        <div class="metric">
+          <div class="m-lbl">Jumlah Data</div>
+          <div class="m-val" id="count-val">5 Karung</div>
+        </div>
+        <div class="metric">
+          <div class="m-lbl">Target Mean</div>
+          <div class="m-val" id="mean-hint">???</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn" onclick="checkBalanceStage2()">⚖️ Cek Keseimbangan</button>
+        <button class="btn red" id="btn-outlier-stage2" onclick="toggleOutlierStage2()">+ Tambah Outlier (20 kg)</button>
+      </div>
+    </div>
+
+    <div id="fb-stage2" class="feedback info">
+      Geser slider tumpuan ke kiri/kanan. Perhatikan bagaimana papan kayu 3D di layar miring mengikuti momen gaya data!
+    </div>
+
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn green" style="width:100%;" onclick="goStage(3)">Lanjut ke Tahap 3: GenAI Visual Generator →</button>
+    </div>
+  </div>
+
+  <!-- ================= TAHAP 3: GENAI VISUAL EXERCISE GENERATOR ================= -->
+  <div id="stage-3" class="hidden">
+    <div class="section-title">
+      <span>Tahap 3: Latihan Visual Otomatis (GenAI)</span>
+      <span class="badge" style="background:#2563eb;">~7 Menit</span>
+    </div>
+    <p class="desc">
+      <b>Titik Interaksi 3 (GenAI Fungsional):</b> Sistem GenAI menghasilkan skenario kearifan lokal & dataset baru, lalu <b>otomatis merender ulang susunan karung kopi 3D</b> di papan timbangan! Tugas Anda: temukan titik keseimbangan barunya.
+    </p>
+
+    <div class="card-box ai-bg">
+      <label style="font-size:12px; font-weight:700; color:#1e3a8a;">Pilih Tingkat Tantangan GenAI:</label>
+      <select id="ai-level">
+        <option value="dasar">Level 1 — Panen Normal (Data Simetris, 4–5 Karung)</option>
+        <option value="menengah">Level 2 — Panen Beragam (Data Miring/Skewed)</option>
+        <option value="ekstrem">Level 3 — Panen Raya (Mengandung Outlier Ekstrem)</option>
+      </select>
+
+      <div class="btn-row">
+        <button class="btn" style="background:#2563eb; width:100%;" onclick="generateAIVisualExercise()">
+          ✨ Generate Kasus & Visual 3D Baru (GenAI)
+        </button>
+      </div>
+
+      <div id="ai-scenario-box" style="margin-top:9px; font-size:12px; background:#fff; padding:9px; border-radius:8px; border:1px solid #bfdbfe; line-height:1.45;">
+        <i>Klik tombol di atas agar GenAI merancang studi kasus kearifan lokal kopi baru dan menata ulang karung 3D di panggung AR/VR!</i>
+      </div>
+
+      <div class="slider-wrap" id="ai-slider-wrap" style="display:none; margin-top:10px;">
+        <label>
+          <span>Geser Tumpuan 3D untuk Kasus GenAI:</span>
+          <span id="ai-pivot-val" style="color:#2563eb;">5.00</span>
+        </label>
+        <input type="range" id="ai-pivot-slider" min="1" max="10" step="0.05" value="5.0" oninput="onAIPivotChange(this.value)">
+        <div class="btn-row">
+          <button class="btn green" style="width:100%;" onclick="verifyAIExercise()">✅ Verifikasi Jawaban & Minta Umpan Balik GenAI</button>
+        </div>
+      </div>
+
+      <details style="margin-top:8px; font-size:11px; color:#475569;">
+        <summary style="cursor:pointer; font-weight:600;">⚙️ Opsional: Hubungkan Live Gemini API Key</summary>
+        <input type="password" id="gemini-key" placeholder="Masukkan Gemini API Key (opsional)">
+        <div class="mini-note">Tanpa API key, aplikasi tetap berjalan penuh menggunakan <b>Built-in Procedural GenAI Engine</b> sehingga siap diuji kapan saja.</div>
+      </details>
+    </div>
+
+    <div id="fb-stage3" class="feedback info">
+      Selesaikan minimal 1 tantangan visual GenAI untuk mendapatkan poin penuh Tahap 3.
+    </div>
+
+    <div class="btn-row">
+      <button class="btn green" style="width:100%;" onclick="goStage(4)">Lanjut ke Tahap 4: Keputusan Kritis →</button>
+    </div>
+  </div>
+
+  <!-- ================= TAHAP 4: KEPUTUSAN KRITIS & REFLEKSI ================= -->
+  <div id="stage-4" class="hidden">
+    <div class="section-title">
+      <span>Tahap 4: Pengambilan Keputusan Kritis</span>
+      <span class="badge green">~5 Menit</span>
+    </div>
+    <p class="desc">
+      <b>Titik Interaksi 4 (Evaluasi Kognitif):</b> Koperasi Kopi Gayo mencatat hasil panen 6 petani: <b>2, 3, 4, 5, 6, dan 20 kg</b> (1 petani panen raya). Pengurus ingin menetapkan target "hasil wajar harian" agar adil bagi mayoritas petani. Keputusan statistik manakah yang paling tepat?
+    </p>
+
+    <div class="card-box">
+      <button class="quiz-opt" onclick="answerQuiz(this, false, 'Mean = 6,67 kg terdistorsi jauh oleh 1 data ekstrem (20 kg), padahal 5 dari 6 petani hanya memanen ≤ 6 kg. Jika dipakai sebagai target harian, mayoritas petani akan merasa terbebani.')">
+        A. Gunakan <b>Mean (6,67 kg)</b> karena selalu paling akurat untuk semua jenis data.
+      </button>
+      <button class="quiz-opt" onclick="answerQuiz(this, true, 'Tepat sekali! Karena terdapat outlier ekstrem (20 kg), Mean tertarik naik ke 6,67 kg. Median (4,5 kg) jauh lebih representatif menggambarkan kondisi mayoritas petani kopi.')">
+        B. Gunakan <b>Median (4,5 kg)</b> karena tahan (<i>robust</i>) terhadap tarikan <i>outlier</i> 20 kg.
+      </button>
+      <button class="quiz-opt" onclick="answerQuiz(this, false, 'Menghapus data panen raya tanpa alasan metodologis yang jelas dapat menghilangkan informasi penting; lebih tepat melaporkannya bersama ukuran pemusatan yang tahan outlier (Median).')">
+        C. Gunakan <b>Nilai Maksimum (20 kg)</b> sebagai standar agar semua petani termotivasi.
+      </button>
+    </div>
+
+    <div id="fb-stage4" class="feedback info">
+      Pilih salah satu keputusan di atas untuk menerima diagnosis pedagogis dan menyelesaikan sesi pembelajaran.
+    </div>
+
+    <div id="summary-card" class="card-box coffee-bg hidden" style="margin-top:10px;">
+      <b>🏆 Ringkasan Penyelesaian Sesi StatisKopi</b>
+      <p class="desc" id="summary-text" style="margin:6px 0 0 0;"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= A-FRAME 3D / VR / AR SCENE ================= -->
+<a-scene
+  id="vr-scene"
+  renderer="antialias: true; alpha: true;"
+  vr-mode-ui="enabled: true"
+  embedded>
+
+  <!-- Pencahayaan Cerah -->
+  <a-entity light="type: ambient; color: #ffffff; intensity: 0.85"></a-entity>
+  <a-entity light="type: directional; color: #fff8eb; intensity: 0.9" position="3 7 5"></a-entity>
+
+  <!-- Kamera -->
+  <a-entity id="camera-rig" position="0 1.65 4.3" rotation="0 0 0">
+    <a-camera wasd-controls="acceleration: 20" look-controls="touchEnabled: true"></a-camera>
+  </a-entity>
+
+  <!-- Lingkungan Galeri VR (Disembunyikan otomatis saat Mode AR Kamera aktif) -->
+  <a-entity id="vr-environment">
+    <a-sky color="#e8eef5"></a-sky>
+    <!-- Lantai Kayu Hangat -->
+    <a-plane position="0 0 -1" rotation="-90 0 0" width="16" height="16" color="#dcc6a8"></a-plane>
+    <!-- Dinding Belakang Galeri -->
+    <a-box position="0 2.6 -5.5" width="16" height="5.2" depth="0.2" color="#f8fafc"></a-box>
+    <!-- Dinding Samping -->
+    <a-box position="-8 2.6 -1" width="0.2" height="5.2" depth="16" color="#f3efe9"></a-box>
+    <a-box position="8 2.6 -1" width="0.2" height="5.2" depth="16" color="#f3efe9"></a-box>
+
+    <!-- Papan Judul Galeri di Dinding Belakang -->
+    <a-entity position="0 3.35 -5.35">
+      <a-box width="7.2" height="1.6" depth="0.08" color="#1b365d"></a-box>
+      <a-box width="7.35" height="1.75" depth="0.04" position="0 0 -0.03" color="#8b5a2b"></a-box>
+      <a-text value="GALERI VIRTUAL STATISKOPI (AR / VR + GenAI)" position="0 0.4 0.06" align="center" color="#facc15" width="7"></a-text>
+      <a-text id="wall-subtitle" value="Memahami Mean sebagai Titik Keseimbangan & Sensitivitas Outlier" position="0 -0.05 0.06" align="center" color="#ffffff" width="5.6"></a-text>
+      <a-text id="wall-formula" value="Rumus: x-bar = (Sigma xi) / n  |  Konteks: Panen Kopi Nusantara" position="0 -0.48 0.06" align="center" color="#cbd5e1" width="4.8"></a-text>
+    </a-entity>
+  </a-entity>
+
+  <!-- ================= OBJEK UTAMA 3D: TIMBANGAN KOPI INTERAKTIF ================= -->
+  <a-entity id="scale-assembly" position="0 0.9 -1.2">
+    <!-- Meja Pedestal (hanya tampil di VR agar rapi; di AR melayang di atas meja nyata) -->
+    <a-box id="pedestal-box" position="0 -0.45 0" width="5.8" height="0.9" depth="1.6" color="#e2e8f0"></a-box>
+
+    <!-- Penggaris Skala 1 - 10 di Depan Timbangan -->
+    <a-entity id="scale-ruler" position="0 0.05 0.65"></a-entity>
+
+    <!-- Tumpuan Segitiga (Fulcrum) yang bisa digeser mahasiswa -->
+    <a-entity id="fulcrum-group" position="-1.5 0.25 0">
+      <a-cone id="fulcrum-cone" radius-bottom="0.28" radius-top="0.02" height="0.5" segments-radial="3" color="#b91c1c"></a-cone>
+      <a-text id="fulcrum-label" value="Tumpuan: 2.00" position="0 -0.35 0.3" align="center" color="#b91c1c" width="3.2"></a-text>
+    </a-entity>
+
+    <!-- Papan Kayu & Karung Kopi Dinamis (Berputar di atas titik tumpu!) -->
+    <a-entity id="beam-pivot-anchor" position="-1.5 0.52 0" rotation="0 0 0">
+      <a-entity id="beam-offset-container" position="1.5 0 0">
+        <!-- Papan Kayu Skala 1..10 (Panjang 5.0 unit => 0.5 unit per angka) -->
+        <a-box id="wooden-beam" position="0 0 0" width="5.2" height="0.1" depth="0.6" color="#a67c52"></a-box>
+        <!-- Container Karung Kopi 3D (Dihasilkan dinamis oleh JS & GenAI) -->
+        <a-entity id="sacks-container"></a-entity>
+      </a-entity>
+    </a-entity>
+
+    <!-- Papan Status 3D Melayang di Atas Timbangan -->
+    <a-entity position="0 1.95 0">
+      <a-box width="4.4" height="0.65" depth="0.06" color="#ffffff" opacity="0.92"></a-box>
+      <a-text id="floating-status" value="Data: [2, 3, 4, 5, 6] kg | Geser Tumpuan!" position="0 0.12 0.05" align="center" color="#1b365d" width="4.2"></a-text>
+      <a-text id="floating-sub" value="Kondisi: Belum Seimbang" position="0 -0.15 0.05" align="center" color="#b91c1c" width="3.6"></a-text>
+    </a-entity>
+  </a-entity>
+
+</a-scene>
+
+<script>
+  // ==================== STATE GLOBAL ====================
+  let currentStage = 1;
+  let currentMode = 'vr';
+  let arStream = null;
+  let score = 0;
+  const completedStages = { 1: false, 2: false, 25: false, 3: false, 4: false };
+
+  // Data aktif pada timbangan 3D (skala posisi 1..10)
+  // Format item: { pos: number (1..10), weight: number (kg), label: string, isOutlier: boolean }
+  let activeSacks = [
+    { pos: 2, weight: 2, label: '2kg', isOutlier: false },
+    { pos: 3, weight: 3, label: '3kg', isOutlier: false },
+    { pos: 4, weight: 4, label: '4kg', isOutlier: false },
+    { pos: 5, weight: 5, label: '5kg', isOutlier: false },
+    { pos: 6, weight: 6, label: '6kg', isOutlier: false }
+  ];
+  let stage2OutlierAdded = false;
+  let currentPivot = 2.0; // Skala 1..10
+  let currentAIMeanTarget = 4.0;
+  let aiExerciseCount = 0;
+
+  // Konversi skala angka (1..10) ke koordinat X di A-Frame (-2.25 .. +2.25)
+  // Angka 5.5 = X 0.0; tiap 1 satuan angka = 0.5 meter
+  function scaleToX(val) {
+    return (val - 5.5) * 0.5;
+  }
+
+  // ==================== INISIALISASI PENGGARIS & TIMER ====================
+  window.addEventListener('DOMContentLoaded', () => {
+    buildRuler();
+    renderSacks3D();
+    updateBalancePhysics(currentPivot);
+    startSessionTimer();
+  });
+
+  function buildRuler() {
+    const ruler = document.getElementById('scale-ruler');
+    for (let i = 1; i <= 10; i++) {
+      const x = scaleToX(i);
+      const tick = document.createElement('a-box');
+      tick.setAttribute('position', `${x} 0 0`);
+      tick.setAttribute('width', '0.03');
+      tick.setAttribute('height', '0.12');
+      tick.setAttribute('depth', '0.03');
+      tick.setAttribute('color', '#1b365d');
+      ruler.appendChild(tick);
+
+      const txt = document.createElement('a-text');
+      txt.setAttribute('value', `${i}`);
+      txt.setAttribute('position', `${x} -0.15 0.05`);
+      txt.setAttribute('align', 'center');
+      txt.setAttribute('color', '#1b365d');
+      txt.setAttribute('width', '2.8');
+      ruler.appendChild(txt);
+    }
+  }
+
+  function startSessionTimer() {
+    let seconds = 0;
+    setInterval(() => {
+      seconds++;
+      const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+      const s = String(seconds % 60).padStart(2, '0');
+      document.getElementById('timer-badge').innerText = `⏱ ${m}:${s} / 15–20 mnt`;
+    }, 1000);
+  }
+
+  function addScore(key, pts) {
+    if (!completedStages[key]) {
+      completedStages[key] = true;
+      score = Math.min(100, score + pts);
+      document.getElementById('score-badge').innerText = `Skor: ${score}/100`;
+    }
+  }
+
+  function completeStage(stageNum, pts) {
+    addScore(stageNum, pts);
+    const tab = document.getElementById(`tab-${stageNum}`);
+    if (tab) tab.classList.add('done');
+  }
+
+  // ==================== RENDER KARUNG KOPI 3D DINAMIS ====================
+  function renderSacks3D() {
+    const container = document.getElementById('sacks-container');
+    while (container.firstChild) container.removeChild(container.firstChild);
+
+    // Hitung frekuensi posisi sama agar karung bisa ditumpuk rapi jika ada nilai kembar
+    const stackCount = {};
+    activeSacks.forEach((s) => {
+      const key = s.pos.toFixed(1);
+      stackCount[key] = (stackCount[key] || 0);
+      const level = stackCount[key];
+      stackCount[key]++;
+
+      const x = scaleToX(s.pos);
+      const radius = s.isOutlier ? 0.24 : 0.14;
+      const height = s.isOutlier ? 0.62 : 0.36;
+      const y = 0.05 + (height / 2) + (level * (height + 0.03));
+
+      const group = document.createElement('a-entity');
+      group.setAttribute('position', `${x} ${y} 0`);
+
+      // Badan karung
+      const cyl = document.createElement('a-cylinder');
+      cyl.setAttribute('radius', radius);
+      cyl.setAttribute('height', height);
+      cyl.setAttribute('color', s.isOutlier ? '#b91c1c' : '#7c4d25');
+      group.appendChild(cyl);
+
+      // Ikatan atas karung
+      const topTie = document.createElement('a-torus');
+      topTie.setAttribute('radius', radius * 0.72);
+      topTie.setAttribute('radius-tubular', '0.02');
+      topTie.setAttribute('rotation', '90 0 0');
+      topTie.setAttribute('position', `0 ${height * 0.36} 0`);
+      topTie.setAttribute('color', '#d97706');
+      group.appendChild(topTie);
+
+      // Label berat
+      const lbl = document.createElement('a-text');
+      lbl.setAttribute('value', s.label);
+      lbl.setAttribute('position', `0 ${height / 2 + 0.14} 0.05`);
+      lbl.setAttribute('align', 'center');
+      lbl.setAttribute('color', s.isOutlier ? '#b91c1c' : '#1b365d');
+      lbl.setAttribute('width', s.isOutlier ? '3.4' : '2.6');
+      group.appendChild(lbl);
+
+      container.appendChild(group);
+    });
+
+    const dataList = activeSacks.map(s => s.weight).join(', ');
+    document.getElementById('floating-status').setAttribute('value', `Data: [${dataList}] kg (n=${activeSacks.length})`);
+    const countEl = document.getElementById('count-val');
+    if (countEl) countEl.innerText = `${activeSacks.length} Karung`;
+  }
+
+  // ==================== FISIKA KESEIMBANGAN (MEAN = TITIK TUMPU) ====================
+  function computeTrueMean() {
+    const sum = activeSacks.reduce((acc, s) => acc + s.weight, 0);
+    return sum / activeSacks.length;
+  }
+
+  function updateBalancePhysics(pivotVal) {
+    currentPivot = parseFloat(pivotVal);
+    const trueMean = computeTrueMean();
+    const diff = trueMean - currentPivot; // >0 berarti sisi kanan lebih berat (miring kanan / rotasi negatif Z)
+
+    // Batasi sudut kemiringan maksimal ±18 derajat
+    let angleDeg = Math.max(-18, Math.min(18, -diff * 6.5));
+    const isBalanced = Math.abs(diff) <= 0.18;
+    if (isBalanced) angleDeg = 0;
+
+    const pivotX = scaleToX(currentPivot);
+
+    // Pindahkan tumpuan segitiga
+    const fulcrumGroup = document.getElementById('fulcrum-group');
+    fulcrumGroup.setAttribute('position', `${pivotX} 0.25 0`);
+
+    const cone = document.getElementById('fulcrum-cone');
+    cone.setAttribute('color', isBalanced ? '#15803d' : '#b91c1c');
+
+    const flbl = document.getElementById('fulcrum-label');
+    flbl.setAttribute('value', `Tumpuan: ${currentPivot.toFixed(2)}`);
+    flbl.setAttribute('color', isBalanced ? '#15803d' : '#b91c1c');
+
+    // Pindahkan titik poros papan & putar papan kayu
+    const anchor = document.getElementById('beam-pivot-anchor');
+    anchor.setAttribute('position', `${pivotX} 0.52 0`);
+    anchor.setAttribute('rotation', `0 0 ${angleDeg}`);
+
+    const offset = document.getElementById('beam-offset-container');
+    offset.setAttribute('position', `${-pivotX} 0 0`);
+
+    // Update label melayang 3D
+    const sub = document.getElementById('floating-sub');
+    if (isBalanced) {
+      sub.setAttribute('value', `SEIMBANG! Mean = ${trueMean.toFixed(2)} kg`);
+      sub.setAttribute('color', '#15803d');
+    } else if (diff > 0) {
+      sub.setAttribute('value', `Miring ke KANAN (Geser tumpuan ke kanan →)`);
+      sub.setAttribute('color', '#b91c1c');
+    } else {
+      sub.setAttribute('value', `Miring ke KIRI (← Geser tumpuan ke kiri)`);
+      sub.setAttribute('color', '#b91c1c');
+    }
+
+    // Update UI metrik Tahap 2
+    const tiltEl = document.getElementById('tilt-val');
+    if (tiltEl) {
+      tiltEl.innerText = isBalanced ? '0° (Seimbang)' : `${Math.abs(angleDeg).toFixed(1)}°`;
+      tiltEl.style.color = isBalanced ? '#15803d' : '#b91c1c';
+    }
+  }
+
+  // ==================== NAVIGASI TAHAP ====================
+  function goStage(num) {
+    currentStage = num;
+    for (let i = 1; i <= 4; i++) {
+      document.getElementById(`stage-${i}`).classList.toggle('hidden', i !== num);
+      document.getElementById(`tab-${i}`).classList.toggle('active', i === num);
+    }
+    if (num === 2) {
+      loadStage2Data();
+    }
+  }
+
+  function togglePanel() {
+    document.getElementById('panel').classList.toggle('collapsed');
+  }
+
+  // ==================== MODE VR vs MODE AR KAMERA ====================
+  async function setMode(mode) {
+    currentMode = mode;
+    const video = document.getElementById('ar-video');
+    const vrEnv = document.getElementById('vr-environment');
+    const pedestal = document.getElementById('pedestal-box');
+    const btnVR = document.getElementById('btn-mode-vr');
+    const btnAR = document.getElementById('btn-mode-ar');
+
+    if (mode === 'ar') {
+      try {
+        arStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }, audio: false
+        });
+        video.srcObject = arStream;
+        video.style.display = 'block';
+        vrEnv.setAttribute('visible', 'false');
+        pedestal.setAttribute('visible', 'false');
+        btnAR.classList.add('active-mode');
+        btnVR.classList.remove('active-mode');
+      } catch (err) {
+        alert('Kamera tidak dapat diakses (pastikan izin kamera diaktifkan atau buka via HTTPS/GitHub Pages). Tetap menggunakan Mode VR 3D.');
+        setMode('vr');
+      }
+    } else {
+      if (arStream) {
+        arStream.getTracks().forEach(t => t.stop());
+        arStream = null;
+      }
+      video.style.display = 'none';
+      vrEnv.setAttribute('visible', 'true');
+      pedestal.setAttribute('visible', 'true');
+      btnVR.classList.add('active-mode');
+      btnAR.classList.remove('active-mode');
+    }
+  }
+
+  // ==================== TAHAP 2: EKSPLORASI MEAN & OUTLIER ====================
+  function loadStage2Data() {
+    activeSacks = [
+      { pos: 2, weight: 2, label: '2kg', isOutlier: false },
+      { pos: 3, weight: 3, label: '3kg', isOutlier: false },
+      { pos: 4, weight: 4, label: '4kg', isOutlier: false },
+      { pos: 5, weight: 5, label: '5kg', isOutlier: false },
+      { pos: 6, weight: 6, label: '6kg', isOutlier: false }
+    ];
+    if (stage2OutlierAdded) {
+      activeSacks.push({ pos: 9.8, weight: 20, label: 'OUTLIER 20kg', isOutlier: true });
+    }
+    renderSacks3D();
+    updateBalancePhysics(document.getElementById('pivot-slider').value);
+  }
+
+  function onPivotChange(val) {
+    document.getElementById('pivot-val-text').innerText = parseFloat(val).toFixed(2);
+    updateBalancePhysics(val);
+  }
+
+  function checkBalanceStage2() {
+    const trueMean = computeTrueMean();
+    const diff = Math.abs(trueMean - currentPivot);
+    const fb = document.getElementById('fb-stage2');
+
+    if (diff <= 0.18) {
+      document.getElementById('mean-hint').innerText = trueMean.toFixed(2);
+      if (!stage2OutlierAdded) {
+        completeStage(2, 20);
+        fb.className = 'feedback success';
+        fb.innerHTML = `<b>Benar! Mean = 4,00 kg.</b> Papan seimbang tepat di angka 4 karena jumlah jarak data di kiri (2 dan 3) sama dengan di kanan (5 dan 6). Sekarang klik <b>"+ Tambah Outlier (20 kg)"</b> untuk Titik Interaksi 2!`;
+      } else {
+        addScore(25, 15);
+        fb.className = 'feedback warn';
+        fb.innerHTML = `<b>Luar biasa! Mean baru melonjak ke 6,67 kg.</b> Lihat betapa 1 karung ekstrem (20 kg) menarik titik keseimbangan jauh ke kanan. Inilah bukti visual mengapa <i>Mean</i> sangat sensitif terhadap <i>outlier</i>.`;
+      }
+    } else {
+      fb.className = 'feedback danger';
+      fb.innerHTML = `Belum seimbang! Papan masih miring. Geser slider tumpuan ke arah sisi papan yang turun (lebih berat) hingga sudut kemiringan menjadi <b>0°</b>.`;
+    }
+  }
+
+  function toggleOutlierStage2() {
+    stage2OutlierAdded = !stage2OutlierAdded;
+    const btn = document.getElementById('btn-outlier-stage2');
+    const fb = document.getElementById('fb-stage2');
+    document.getElementById('mean-hint').innerText = '???';
+
+    if (stage2OutlierAdded) {
+      btn.innerText = '↺ Hapus Outlier (20 kg)';
+      btn.className = 'btn gold';
+      fb.className = 'feedback warn';
+      fb.innerHTML = `<b>Titik Interaksi 2 Aktif!</b> Karung Panen Raya <b>20 kg</b> ditambahkan di ujung kanan. Papan langsung miring tajam! Geser ulang tumpuan untuk mencari <i>Mean</i> barunya.`;
+    } else {
+      btn.innerText = '+ Tambah Outlier (20 kg)';
+      btn.className = 'btn red';
+      fb.className = 'feedback info';
+      fb.innerHTML = `Outlier dihapus. Data kembali normal: [2, 3, 4, 5, 6] kg.`;
+    }
+    loadStage2Data();
+  }
+
+  // ==================== TAHAP 3: GENAI VISUAL EXERCISE GENERATOR ====================
+  const kopiRegions = [
+    { name: 'Kopi Robusta Lampung Barat', context: 'Kelompok Tani Sekincau' },
+    { name: 'Kopi Arabika Gayo (Aceh)', context: 'Koperasi Petani Takengon' },
+    { name: 'Kopi Toraja Sapan', context: 'Balai Timbang Tana Toraja' },
+    { name: 'Kopi Kintamani Bali', context: 'Subak Abian Bangli' },
+    { name: 'Kopi Bajawa Flores', context: 'Koperasi Tani Ngada' }
+  ];
+
+  async function generateAIVisualExercise() {
+    const level = document.getElementById('ai-level').value;
+    const apiKey = document.getElementById('gemini-key').value.trim();
+    const box = document.getElementById('ai-scenario-box');
+    const fb = document.getElementById('fb-stage3');
+
+    box.innerHTML = `<i>⏳ GenAI sedang merancang skenario kearifan lokal & merender karung kopi 3D baru...</i>`;
+
+    // Generate dataset sesuai level (terjamin akurat secara matematis!)
+    let nums = [];
+    let hasOutlier = false;
+    if (level === 'dasar') {
+      const base = Math.floor(Math.random() * 3) + 2; // 2..4
+      nums = [base, base + 1, base + 2, base + 3, base + 4];
+    } else if (level === 'menengah') {
+      const pool = [2, 2, 3, 4, 5, 7, 8, 9];
+      for (let i = 0; i < 5; i++) nums.push(pool[Math.floor(Math.random() * pool.length)]);
+      nums.sort((a, b) => a - b);
+    } else {
+      hasOutlier = true;
+      const base = Math.floor(Math.random() * 2) + 2; // 2..3
+      const outlierVal = [16, 18, 20, 22][Math.floor(Math.random() * 4)];
+      nums = [base, base + 1, base + 1, base + 2, outlierVal];
+    }
+
+    const region = kopiRegions[Math.floor(Math.random() * kopiRegions.length)];
+    const sum = nums.reduce((a, b) => a + b, 0);
+    currentAIMeanTarget = sum / nums.length;
+
+    // Default procedural GenAI narrative
+    let aiStory = `<b>[${region.name}]</b> Di ${region.context}, tercatat ${nums.length} karung hasil petikan harian: <b>${nums.join(', ')} kg</b>. ${hasOutlier ? 'Terdapat 1 karung panen raya (outlier) yang sangat berat!' : 'Susunan karung telah dirender otomatis pada timbangan 3D.'} Cari posisi tumpuan yang membuat timbangan seimbang!`;
+
+    // Jika pengguna memasukkan Gemini API Key, gunakan Live Gemini API untuk narasi unik
+    if (apiKey.length > 15) {
+      try {
+        const prompt = `Buat 2 kalimat singkat studi kasus statistika kontekstual berbahasa Indonesia tentang ${region.name} (${region.context}) dengan data hasil panen kopi: ${nums.join(', ')} kg. Jangan sebutkan jawaban rata-ratanya. Ajak mahasiswa menggeser tumpuan 3D untuk mencari Mean.`;
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) aiStory = `<b>[Live Gemini AI — ${region.name}]</b> ${text}`;
+        }
+      } catch (e) {
+        // Fallback otomatis ke procedural engine jika offline / CORS
+      }
+    }
+
+    // Update model 3D secara dinamis!
+    activeSacks = nums.map((w, idx) => {
+      const isOut = hasOutlier && idx === nums.length - 1;
+      const visualPos = isOut ? 9.6 : Math.max(1, Math.min(9.5, w));
+      return {
+        pos: visualPos,
+        weight: w,
+        label: isOut ? `OUTLIER ${w}kg` : `${w}kg`,
+        isOutlier: isOut
+      };
+    });
+
+    // Reset slider AI ke posisi awal yang sengaja tidak seimbang
+    const startPivot = currentAIMeanTarget > 5.5 ? 2.5 : 8.0;
+    document.getElementById('ai-pivot-slider').value = startPivot;
+    document.getElementById('ai-pivot-val').innerText = startPivot.toFixed(2);
+    document.getElementById('ai-slider-wrap').style.display = 'block';
+
+    box.innerHTML = aiStory;
+    renderSacks3D();
+    updateBalancePhysics(startPivot);
+
+    fb.className = 'feedback info';
+    fb.innerHTML = `Objek 3D telah diperbarui otomatis oleh GenAI! Geser slider di atas hingga timbangan seimbang, lalu klik <b>Verifikasi Jawaban</b>.`;
+  }
+
+  function onAIPivotChange(val) {
+    document.getElementById('ai-pivot-val').innerText = parseFloat(val).toFixed(2);
+    updateBalancePhysics(val);
+  }
+
+  function verifyAIExercise() {
+    const fb = document.getElementById('fb-stage3');
+    const diff = Math.abs(currentAIMeanTarget - currentPivot);
+    const dataStr = activeSacks.map(s => s.weight).join(' + ');
+    const sum = activeSacks.reduce((a, b) => a + b.weight, 0);
+
+    if (diff <= 0.22) {
+      aiExerciseCount++;
+      completeStage(3, 25);
+      fb.className = 'feedback success';
+      fb.innerHTML = `<b>✅ Tepat! Analisis GenAI:</b><br>
+        x̄ = (${dataStr}) / ${activeSacks.length} = ${sum} / ${activeSacks.length} = <b>${currentAIMeanTarget.toFixed(2)} kg</b>.<br>
+        Anda berhasil menyelesaikan ${aiExerciseCount} latihan visual GenAI. Coba klik <i>Generate</i> lagi untuk variasi baru atau lanjut ke Tahap 4!`;
+    } else {
+      const arah = currentPivot < currentAIMeanTarget ? 'ke KANAN (nilai lebih besar)' : 'ke KIRI (nilai lebih kecil)';
+      fb.className = 'feedback warn';
+      fb.innerHTML = `<b>💡 Umpan Balik Diagnostik GenAI:</b> Posisi tumpuan Anda (${currentPivot.toFixed(2)}) belum menyeimbangkan papan. Jumlah total berat adalah <b>${sum} kg</b> untuk <b>${activeSacks.length} karung</b>. Coba geser tumpuan <b>${arah}</b>!`;
+    }
+  }
+
+  // ==================== TAHAP 4: KEPUTUSAN KRITIS ====================
+  function answerQuiz(btnEl, isCorrect, explanation) {
+    const allOpts = document.querySelectorAll('.quiz-opt');
+    allOpts.forEach(b => b.classList.remove('correct', 'wrong'));
+    btnEl.classList.add(isCorrect ? 'correct' : 'wrong');
+
+    const fb = document.getElementById('fb-stage4');
+    if (isCorrect) {
+      completeStage(4, 25);
+      fb.className = 'feedback success';
+      fb.innerHTML = `<b>✅ Keputusan Tepat!</b> ${explanation}`;
+
+      const sumCard = document.getElementById('summary-card');
+      sumCard.classList.remove('hidden');
+      document.getElementById('summary-text').innerHTML =
+        `Anda telah menyelesaikan seluruh alur <b>StatisKopi AR/VR + GenAI</b> dengan skor akhir <b>${score}/100</b>. ` +
+        `Seluruh konsep utama (<i>Mean</i> sebagai titik keseimbangan, dampak <i>outlier</i>, dan pemilihan <i>Median</i> pada data miring) telah dipraktikkan secara langsung.`;
+    } else {
+      fb.className = 'feedback danger';
+      fb.innerHTML = `<b>❌ Belum Tepat.</b> ${explanation} Silakan analisis ulang dan pilih opsi lain.`;
+    }
+  }
+</script>
+</body>
+</html>
